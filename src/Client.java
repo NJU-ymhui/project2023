@@ -1,10 +1,9 @@
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.Random;
 import java.util.Scanner;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -19,6 +18,7 @@ public class Client {
 
     private byte[] serverAddr = new byte[4];
     private int serverPort;
+
 
     protected void receive(Packet packet) {
         receivedPacket = packet;
@@ -112,14 +112,87 @@ public class Client {
      * 数据传输
      * @param host 发送方
      * */
-    protected static void dataTransfer(Client host) {
+    protected static void dataTransfer(Client host) throws Exception {
         //TODO
         //使用并维护window进行此项任务
         //step1: 用数据包填满window（需要检查是否可以装填）
         //step2: 逐包发送，并对应答进行检查，更新window状态
         //step3: 如果window所有数据包均被确认，发送下一窗口
         //循环...
+
+
+        Window window1 = host.window;
+        Socket socket = new Socket(InetAddress.getByAddress(host.serverAddr), host.port);//todo:设置全局socket
+
+        while(true){
+            //step1: 用数据包填满window（需要检查是否可以装填）
+            if (window1.ifFinished()){
+                String url = "https://github.com/NJU-ymhui/project2023/blob/1dec49a989881b523d0e1956a5692cb82c84a1c3/src/testfile";
+                FileInputStream fileInputStream = new FileInputStream(url);
+                BufferedInputStream input = new BufferedInputStream(fileInputStream);
+
+                int seq = new Random().nextInt(1234567890);// 该报文第一个字节id
+                for (Packet item : window1.packets){
+                    byte[] buffer = host.getBytes(input, host.MSS);// buffer中存放User数据
+                    byte[] id = Transformer.toBytes(seq, 4);
+                    int ack = Transformer.toInteger(host.receivedPacket.getId()) + 1;// 该报文ack应为上一个Server报文id + 1
+                    byte[] Ack = Transformer.toBytes(ack, 4);
+                    byte[] spcBytes = new byte[2];
+                    spcBytes[0] = host.receivedPacket.getSpcBytes()[0];
+                    spcBytes[1] = (byte) (host.receivedPacket.getSpcBytes()[1] | (1 << 4));// ACK置1
+                    int checkSum = 0;//todo 计算checksum
+                    Packet p = new Packet(
+                            host.receivedPacket.getDest(), host.receivedPacket.getSrc(), id, Ack,
+                            spcBytes, host.receivedPacket.getWindow(), Transformer.toBytes(checkSum, 2),
+                            host.receivedPacket.getUrgent(), host.receivedPacket.getOptions(),
+                            host.receivedPacket.getAlign(), host.receivedPacket.MSS
+                    );
+                    p.setData(new Data(buffer));
+                    window1.replace(p);
+                    seq++;
+                }
+            }
+
+            //step2: 处理应答、逐包发送 todo：窗口存在未确定的判定以及处理情况
+            for (Packet item : window1.packets){
+                //处理来自Server的应答
+                InputStream bytesFromServer = socket.getInputStream();// 获取Server的字节流
+                byte[] buffer = host.getBytes(bytesFromServer, host.MSS);// buffer中存放Server发来报文的字节形式
+                Packet reply = host.buildPacket(buffer);// 组装报文
+                host.receive(reply);// 收到server的reply
+                if (host.receivedPacket != null){
+                    host.print();// 回显报文
+                    checkAndRenew(host.receivedPacket,window1);
+                }
+
+                //发送
+                OutputStream outToServer = socket.getOutputStream();
+                DataOutputStream out = new DataOutputStream(outToServer);
+                out.write(item.getBytes());
+            }
+
+            if(window1.ifFinished()) break;
+
+        }
+
     }
+
+    /**
+     * 检查应答报文，并更新windows窗口状态
+     * @param packet 需要检查的报文
+     * @param window 需要更新的窗口
+     */
+    private static void checkAndRenew(Packet packet,Window window){
+        for (Packet p : window.packets){
+            if (p.getId() == packet.getAck() && packet.ackValid()){
+                p.isAck = true;
+            }
+        }
+
+        //是否改变windows窗口大小
+        //window.size = Transformer.toInteger(packet.getWindow());
+    }
+
     /**
      * 对于收到的报文进行应答
      * @param srcPacket 收到的报文
