@@ -45,12 +45,14 @@ public class Server extends Client{
         this.port = port;
     }
     private static void buildConnection(Server server) throws Exception{
+        System.out.println("Trying to connect...");
         while (!server.connected) {
             //监听以接收报文
             Socket listenSocket = server.welcomeSocket.accept();// 先主动建立一个用于接收初始请求报文的socket，只用于建立连接前的冷启动
             InputStream bytesFromClient = listenSocket.getInputStream();// 获取client的字节流
             OutputStream bytesToClient = listenSocket.getOutputStream();
             byte[] buffer = server.getBytes(bytesFromClient, 20);// buffer中存放client发来报文的字节形式
+            //byte[] buffer = new byte[]{64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64};
             Packet firstHandShake = server.buildPacket(buffer);// 组装报文
             server.receive(firstHandShake);// 收到client的第一次握手报文
             server.print();// 回显报文
@@ -72,6 +74,7 @@ public class Server extends Client{
                         server.receivedPacket.getAlign(), server.receivedPacket.MSS
                 );
                 server.send(listenSocket, secondShakeHand);// 将报文发送给client，完成应答
+                System.out.println("Send");
 
                 //检查第三次握手报文
                 bytesFromClient = listenSocket.getInputStream();
@@ -107,7 +110,9 @@ public class Server extends Client{
                     server.welcomeSocket.close();
                 }
             }
-            else continue;// 对于未建立连接时的一切SYN != 1 || ACK != 0的报文直接丢弃
+            else {
+                System.out.println("No synchronization request.");
+            }// 对于未建立连接时的一切SYN != 1 || ACK != 0的报文直接丢弃
         }
     }
     /**
