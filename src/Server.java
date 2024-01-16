@@ -121,7 +121,7 @@ public class Server extends Client {
     private static void releaseConnection(Server server, Socket connectingSocket) throws Exception {
         //  Socket connectingSocket = server.welcomeSocket.accept();//连接中的socket
         InputStream bytesFromClient = connectingSocket.getInputStream();
-        OutputStream bytesToClient = connectingSocket.getOutputStream();
+        OutputStream bytesToClient = connectingSocket.getOutputStream();//暂未使用
         byte[] buffer = server.getBytes(bytesFromClient, 20);
         Packet firstHandShake = server.buildPacket(buffer);// 组装报文
         server.receive(firstHandShake);// 收到client的第一次挥手报文
