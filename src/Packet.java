@@ -1,7 +1,8 @@
+import java.util.Arrays;
 
 public class Packet {
     private Data data = null;
-    public int MSS = 1500;
+    public int MSS;
     public int headSize;
     public boolean isAck = false; // 该报文是否已被确认
     private byte[] srcPort = new byte[2];
@@ -63,19 +64,25 @@ public class Packet {
         return srcPort;
     }
     public int getSrcPort() {
-        return (int) srcPort[0] * (int) srcPort[1];
+        return (int) srcPort[0] * 256 + (int) srcPort[1];
     }
     public byte[] getDest() {
         return destPort;
     }
     public int getDestPort() {
-        return (int) destPort[0] * (int) destPort[1];
+        return (int) destPort[0] * 256 + (int) destPort[1];
     }
     public byte[] getId() {
         return id;
     }
+    private int getSeq() {
+        return (id[0] << 24) + (id[1] << 16) + (id[2] << 8) + id[3];
+    }
     public byte[] getAck() {
         return ack;
+    }
+    private int getAckNum() {
+        return (ack[0] << 24) + (ack[1] << 16) + (ack[2] << 8) + ack[3];
     }
     public byte[] getSpcBytes() { return spcBytes; }
     /**
@@ -94,6 +101,9 @@ public class Packet {
     }
     public byte[] getWindow() {
         return Window;
+    }
+    private int getWindowNum() {
+        return (Window[0] * 256) + Window[1];
     }
     public byte[] getCheck() {
         return check;
@@ -132,5 +142,15 @@ public class Packet {
         return ((spcBytes[1] >> 7) & 1) == 1;
     }
 
+    @Override
+    public String toString() {
+        return String.format("src:%d dest:%d id:%d ack:%d window:%d data:%s\n",
+                getSrcPort(),
+                getDestPort(),
+                getSeq(),
+                getAckNum(),
+                getWindowNum(),
+                " --DATA--");// TODO
+    }
 }
 
