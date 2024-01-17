@@ -106,7 +106,44 @@ public class Client {
      * Client挥手释放连接
      * */
     private static void releaseConnection(Client client) {
-        //TODO
+        // ===============
+        connectionMarks.setFinMark(2);
+        String finMark = String.valueOf(connectionMarks.getFinMark());
+        connectionMarks.setACKMark(1);
+        String ACKFin = String.valueOf(connectionMarks.getACKMark());
+        String SeqFin = String.valueOf(connectionMarks.getSeq());
+        String ACKS1 = String.valueOf(Integer.parseInt(SeqD1) + 1);
+        String dataF1 = finMark + "/" + ACKFin + " " + SeqFin + " " + ACKS1;
+        clientMsg.sendMsg(dataF1, datagramSocket);
+
+        // ===============
+        byte[] bytesB2 = new byte[1024];
+        DatagramPacket datagramPacketB2 = new DatagramPacket(bytesB2, bytesB2.length);
+        datagramSocket.receive(datagramPacketB2);
+        String receiveMsgB2 = new String(datagramPacketB2.getData(), 0, datagramPacketB2.getLength());
+        System.out.println("接收到的数据段为:" + receiveMsgB2);
+
+        // ===============
+        byte[] bytesB3 = new byte[1024];
+        DatagramPacket datagramPacketB3 = new DatagramPacket(bytesB3, bytesB3.length);
+        datagramSocket.receive(datagramPacketB3);
+        String receiveMsgB3 = new String(datagramPacketB3.getData(), 0, datagramPacketB3.getLength());
+        System.out.println("接收到的数据段为:" + receiveMsgB3);
+        String[] splitB3 = receiveMsgB3.split(" ");
+        String[] split2 = splitB3[0].split("/");
+        if (!(split2[0].equals("2")
+                || split2[1].equals("1")
+                || splitB3[1].equals(ACKS1)
+                || splitB3[2].equals(String.valueOf(Integer.parseInt(SeqFin) + 1)))) {
+            throw new WrongConnectionException("非本次连接");
+        }
+
+        // ===============
+        String receiveB4 = serverMsg.receive(datagramSocket, 0, 0);
+        System.out.println("接收到的数据段为:" + receiveB4);
+
+        // 关闭流
+        datagramSocket.close();
     }
     /**
      * 数据传输
