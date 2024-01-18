@@ -1,3 +1,4 @@
+import java.util.Arrays;
 
 public class Window {
     public int size; // Byte
@@ -5,8 +6,7 @@ public class Window {
     public Packet[] packets;
     public void initPackets() {
         packets = new Packet[size / segmentSize]; // 先设置好size再初始化packets
-        for (Packet item : packets)
-            item = null;
+        Arrays.fill(packets, null);
     }
     /**
      * 检查window数据包是否发送完毕
@@ -17,14 +17,23 @@ public class Window {
         for (Packet packet : packets) if (packet != null && !packet.isAck) return false;
         return true;
     }
+    public boolean full() {
+        for (Packet p : packets) {
+            if (p == null || p.isAck) return false;
+        }
+        return true;
+    }
 
     /**
      * 寻找packets中已被应答的报文并替换为参数报文packet
      * @param packet 替换的报文
      * */
     public void replace(Packet packet) {
-        for (Packet item : packets) {
-            if (item == null || item.isAck) item = packet;
+        for (int i = 0; i < packets.length; i++) {
+            if (packets[i] == null || packets[i].isAck) {
+                packets[i] = packet;
+                break;
+            }
         }
     }
     //todo other possible methods
