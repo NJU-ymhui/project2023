@@ -105,16 +105,14 @@ public class Client {
     /**
      * Client挥手释放连接
      * */
-    private static void releaseConnection(Client client) {
-        private static void releaseConnection(Client client) {
+    private static void releaseConnection(Client client, Socket connectingSocket) throws Exception {
         InputStream bytesFromServer = connectingSocket.getInputStream();
-        OutputStream bytesToServer = connectingSocket.getOutputStream();
         byte[] buffer = client.getBytes(bytesFromServer, 20);
         byte[] id = Transformer.toBytes(seq, 4);
         byte[] Ack = Transformer.toBytes(ack, 4);
         byte[] spcBytes = new byte[2];
-        int seq = Transformer.toInteger(server.receivedPacket.getId()) + 1;// 最后一个数据的最后一个字节加一
-        int ack;
+        int seq = new Random().nextInt(1234567890);// 随机
+        int ack = 0;
         spcBytes[1] = (byte) (spcBytes[1] | 0b00000001);// FIN置1
         Packet firstHandShake = new Packet(
                 client.receivedPacket.getDest(), client.receivedPacket.getSrc(), id, Ack,
@@ -122,18 +120,25 @@ public class Client {
                 client.receivedPacket.getUrgent(), client.receivedPacket.getOptions(),
                 client.receivedPacket.getAlign(), client.receivedPacket.MSS);
         client.send(connectingSocket, firstHandShake);
-
-        client.receive(secondShakeHand);// client 进入 FIN-WAIT-1
-        serve.print();
+        // client 进入 FIN-WAIT-1
+        bytesFromServer = connectingSocket.getInputStream();
+        buffer = client.getBytes(bytesFromClient, 20);
+        Packet secondShakeHand = client.buildPacket(buffer);
+        client.receive(secondShakeHand);
+        client.print();
 
         if (client.checkFIN(secondShakeHand)) {
             client.connected = false;
-            client.receive(thirdShakeHand); // client 进入 FIN-WAIT-2
-            serve.print();
+            // client 进入 FIN-WAIT-2
+            bytesFromServer = connectingSocket.getInputStream();
+            buffer = client.getBytes(bytesFromClient, 20);
+            packet thirdShakeHand = client.buildPacket(buffer);
+            client.receive(thirdShakeHand);
+            client.print();
 
             if (client.checkFIN(thirdShakeHand)) {
-                seq = new Random().nextInt(1234567890);
-
+                seq = Transformer.toInteger(client.receivedPacket.getAck()) + 1;
+                ack = Transformer.toInteger(client.receivedPacket.getId()) + 1;
                 Packet fourthHandShake = new Packet(
                         client.receivedPacket.getDest(), client.receivedPacket.getSrc(), id, Ack,
                         spcBytes, client.receivedPacket.getWindow(), Transformer.toBytes(checkSum, 2),
@@ -146,11 +151,10 @@ public class Client {
             } else {
                 System.out.println("Failed to release connection.");
             } // 不符合挥手规范，抛出异常
-            // }
+              // }
         } else {
             System.out.println("Failed to release connection.");
         } // 不符合挥手规范，抛出异常
-    }// 时间等待计时器&保活计时器
     }
     /**
      * 数据传输
