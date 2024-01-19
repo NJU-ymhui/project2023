@@ -6,6 +6,8 @@ import java.util.Random;
 public class Server extends Client{
     private boolean up = false; //标记服务端是否已启用
     private boolean connected = false;
+    public String path;
+
 
     //设置一个接受缓冲区
 
@@ -13,7 +15,7 @@ public class Server extends Client{
      * 根据当前报文中window值设置window大小
      * */
     public void setWindowSize() {
-        window.size = Transformer.toInteger(receivedPacket.getWindow());
+        window.setSize(Transformer.toInteger(receivedPacket.getWindow()));
     }
     /**
      * 启用服务器
@@ -64,14 +66,16 @@ public class Server extends Client{
             Socket listenSocket = server.connectionSocket;
             InputStream bytesFromClient = listenSocket.getInputStream();// 获取client的字节流
             OutputStream bytesToClient = listenSocket.getOutputStream();
-            byte[] buffer = server.getBytes(bytesFromClient, 24);// buffer中存放client发来报文的字节形式
+            byte[] buffer = server.getBytes(bytesFromClient);// buffer中存放client发来报文的字节形式
             Packet firstHandShake = server.buildPacket(buffer);// 组装报文
+//            System.out.println("gggg");
             server.receive(firstHandShake);// 收到client的第一次握手报文
             System.out.println("first from client");
             server.print();// 回显报文
 
             if (server.checkSYN(firstHandShake)) {
                 System.out.println("start ack first handshake");
+                System.out.println();
                 //应答，作为第二次握手的报文
                 int seq = new Random().nextInt(123456789);// 该报文第一个字节id
                 byte[] id = Transformer.toBytes(seq, 4);
@@ -89,13 +93,13 @@ public class Server extends Client{
                         server.receivedPacket.getAlign(), server.MSS
                 );
 //                System.out.println("Server MSs = " + secondShakeHand.MSS);
-                System.out.println("second from server:");
-                System.out.println(secondShakeHand);
+//                System.out.println("second from server:");
+//                System.out.println(secondShakeHand);
                 server.send(listenSocket, secondShakeHand);// 将报文发送给client，完成应答
 
                 //检查第三次握手报文
                 bytesFromClient = listenSocket.getInputStream();
-                buffer = server.getBytes(bytesFromClient, 24);
+                buffer = server.getBytes(bytesFromClient);
                 Packet thirdHandShake = server.buildPacket(buffer);
                 server.receive(thirdHandShake);
                 System.out.println("third from client:");
@@ -141,7 +145,7 @@ public class Server extends Client{
         //  Socket connectingSocket = server.welcomeSocket.accept();//连接中的socket
         InputStream bytesFromClient = connectingSocket.getInputStream();
         OutputStream bytesToClient = connectingSocket.getOutputStream();//暂未使用
-        byte[] buffer = server.getBytes(bytesFromClient, 24);
+        byte[] buffer = server.getBytes(bytesFromClient);
         Packet firstHandShake = server.buildPacket(buffer);// 组装报文
         server.receive(firstHandShake);// 收到client的第一次挥手报文
         server.print();// 回显报文
@@ -184,7 +188,7 @@ public class Server extends Client{
                 server.send(connectingSocket, thirdHandShake);// 将报文发送给client，请求断开连接；
                 //接受第四次挥手报文
                 bytesFromClient = connectingSocket.getInputStream();
-                buffer = server.getBytes(bytesFromClient, 24);
+                buffer = server.getBytes(bytesFromClient);
                 Packet fourthHandShake = server.buildPacket(buffer);
                 server.receive(fourthHandShake);
                 server.print();
@@ -209,13 +213,42 @@ public class Server extends Client{
     public Server() {
         super();
     }
-
-
+    public Packet set(Packet ctrl) throws Exception{
+        int ctr = Controller.check(ctrl);
+        Data p = ctrl.getData();
+        byte[] data = p.getData();
+        String tmp = new String(data);
+        if (ctr == Controller.PATH_SET) {
+            File file = new File(tmp);
+            Packet ack = new Packet();
+            try (FileInputStream inputFromFile = new FileInputStream(file)){
+                path = tmp;
+                System.out.printf("path '%s' has been set!\n", path);
+                ack.setData(new Data(String.format("path '%s' has been set!\n", path).getBytes()));
+                ack.setMessage(Error.NO_ERROR);
+            }catch (FileNotFoundException e) {
+                System.out.printf("File '%s' not found.\n", tmp);
+                ack.setData(new Data(String.format("File '%s' not found.\n", tmp).getBytes()));
+                ack.setMessage(Error.WRONG_MSG);
+            }
+            return ack;
+        }else if (ctr == Controller.MSS_SET) {
+            MSS = Integer.parseInt(tmp);
+            window.setSegmentSize(MSS);
+            System.out.printf("MSS = %d has been set!\n", MSS);
+        }else if (ctr == Controller.WINDOW_SET) {
+            window.setSize(Integer.parseInt(tmp));
+            System.out.printf("window size = %d has been set!\n", window.getSize());
+        }
+        return null;
+    }
+    public void errorManage(Packet icmp) {
+        //todo
+    }
     public static void main(String[] argv) throws Exception{
         //argv[0]为服务器启动时监听的端口号; argv[1] argv[2]分别为传输文件的path和MSS(需要判断是否存在)
-        //todo
         Server server = new Server();
-        if (argv.length != 3) {
+        if (argv.length != 1) {
             System.out.println("Parameter count error!");
             return;
         }// 参数数量是否合法
@@ -231,26 +264,6 @@ public class Server extends Client{
             return;
         }// 端口号是否合法
 
-        String path = argv[1];
-        File file = new File(path);
-        try (FileInputStream inputFromFile = new FileInputStream(file)){
-            ;
-        }catch (FileNotFoundException e) {
-            System.out.printf("File '%s' not found.\n", argv[1]);
-            return;
-        }// 文件是否存在
-
-        try {
-            server.MSS = Integer.parseInt(argv[2]);
-            if (server.MSS > 1500 || server.MSS <= 0) {
-                System.out.printf("Invalid MSS '%s'.\n", argv[2]);
-                return;
-            }
-            server.window.segmentSize = server.MSS;
-        }catch (NumberFormatException e) {
-            System.out.printf("Invalid MSS '%s'.\n", argv[2]);
-            return;
-        }// MSS是否合法
         server.start();
 
         while (server.check()) {
@@ -265,18 +278,32 @@ public class Server extends Client{
             }
             //finish connecting
             Socket connectionSocket = server.connectionSocket;
-            //Data Transfer
-            while (connectionSocket.isConnected()){
-                try {
-//                    String hello = "hello";
-//                    OutputStream o = connectionSocket.getOutputStream();
-//                    o.write(hello.getBytes());
-//                    o.flush();
-                    Server.dataTransfer(server, connectionSocket, path);
-                }catch (Exception e) {
-                    server.release();
-//                    return;
-                    break;
+            //todo: control & data transfer
+            while (!connectionSocket.isClosed() && connectionSocket.isConnected()){
+                InputStream fromClient = connectionSocket.getInputStream();
+//                System.out.println("oooo");
+                Packet rcv = server.buildPacket(server.getBytes(fromClient));
+                int check = Controller.check(rcv);
+                switch (check) {
+                    case Controller.MSS_SET:
+                    case Controller.PATH_SET:
+                    case Controller.WINDOW_SET:
+                        Packet tmp = server.set(rcv);
+                        if (tmp != null)
+                            server.send(connectionSocket, tmp);
+                        break;
+                    case Error.WRONG_MSG:
+                    case Error.TIME_OUT:
+                    case Error.MISS_MSG:
+                    case Error.SHUFFLE_MSG:
+                        server.errorManage(rcv);
+                        break;
+                    case Controller.DATA_TRANSFER:
+//                        System.out.println("gggg");
+                        Server.dataTransfer(server, connectionSocket, server.path);
+                        server.window.initPackets();//完成传输后window不再使用，清空，保证每次传输时window均为空
+                        break;
+                    default: break;
                 }
             }
             //todo release connection
