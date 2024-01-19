@@ -1,12 +1,28 @@
 import java.util.Arrays;
 
 public class Window {
-    public int size; // Byte
-    public int segmentSize; // 每个数据段的大小，认为就是MSS的值
+    public final int DEFAULT_SIZE = 100;
+    public final int DEFAULT_SEGMENT = 20;
+    private int size = DEFAULT_SIZE; // Byte
+    private int segmentSize = DEFAULT_SEGMENT; // 每个数据段的大小，认为就是MSS的值
     public Packet[] packets;
     public void initPackets() {
         packets = new Packet[size / segmentSize]; // 先设置好size再初始化packets
         Arrays.fill(packets, null);
+    }
+    public void setSize(int sz) {
+        size = sz;
+        initPackets();
+    }
+    public int getSize() {
+        return size;
+    }
+    public int getSegmentSize() {
+        return segmentSize;
+    }
+    public void setSegmentSize(int sz) {
+        segmentSize = size;
+        initPackets();
     }
     /**
      * 检查window数据包是否发送完毕
