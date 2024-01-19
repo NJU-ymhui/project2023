@@ -34,6 +34,17 @@ public class Packet {
         headSize = 24 + options.length + align.length;
         data = null;
     }
+    public Packet() {
+        this(
+                new byte[2], new byte[2],
+                new byte[4],
+                new byte[4],
+                new byte[2], new byte[2],
+                new byte[2], new byte[2],
+                new byte[]{}, new byte[]{},
+                0
+        );
+    }
     /**
      * 将报文转化为字节流传输
      * @return 字节流
@@ -41,7 +52,7 @@ public class Packet {
     public byte[] getBytes() {
         int dataLen = 0;
         if (data != null && data.getData() != null) dataLen = data.getData().length;
-        byte[] res = new byte[24 + options.length + align.length + dataLen];
+        byte[] res = new byte[24 + options.length + align.length + dataLen + 4];
         System.arraycopy(srcPort, 0, res, 0, 2);
         System.arraycopy(destPort,0, res, 2, 2);
         System.arraycopy(id, 0, res, 4, 4);
@@ -58,8 +69,47 @@ public class Packet {
         if (dataLen > 0) {
             System.arraycopy(data.getData(), 0, res, 24 + options.length + align.length, dataLen);
         }
-
+        res[res.length - 4] = (byte) '#';//'####'作为结束符
+        res[res.length - 3] = (byte) '#';
+        res[res.length - 2] = (byte) '#';
+        res[res.length - 1] = (byte) '#';
+        //7(4B) = \0\0\0\7
         return res;
+    }
+    public void setMessage(int msg) {
+        switch (msg) {
+            case Error.WRONG_MSG:
+                spcBytes[0] = (byte) 0b00000001;
+                break;
+            case Error.MISS_MSG:
+                spcBytes[0] = (byte) 0b00000100;
+                break;
+            case Error.SHUFFLE_MSG:
+                spcBytes[0] = (byte) 0b00001000;
+                break;
+            case Error.TIME_OUT:
+                spcBytes[0] = (byte) 0b00000010;
+                break;
+            case Controller.PATH_SET:
+                spcBytes[0] = (byte) 0b00010000;
+                break;
+            case Controller.MSS_SET:
+                spcBytes[0] = (byte) 0b00100000;
+                break;
+            case Controller.WINDOW_SET:
+                spcBytes[0] = (byte) 0b01000000;
+                break;
+            case Controller.DATA_TRANSFER:
+                spcBytes[0] = (byte) 0b10000000;
+                break;
+            default: break;
+        }
+    }
+    public void setSrcPort(byte[] port) {
+        srcPort = port;
+    }
+    public void setDestPort(byte[] port) {
+        destPort = port;
     }
     public void setAck(byte[] ack) {
         this.ack = ack;
@@ -86,13 +136,13 @@ public class Packet {
         return id;
     }
     private int getSeq() {
-        return (id[0] << 24) + (id[1] << 16) + (id[2] << 8) + id[3];
+        return (id[0] << 24) + (id[1] << 16) + (id[2] << 8) + (id[3] & 0x00ff);
     }
     public byte[] getAck() {
         return ack;
     }
     private int getAckNum() {
-        return (ack[0] << 24) + (ack[1] << 16) + (ack[2] << 8) + ack[3];
+        return (ack[0] << 24) + (ack[1] << 16) + (ack[2] << 8) + (ack[3] & 0x00ff);
     }
     public byte[] getSpcBytes() { return spcBytes; }
     /**
