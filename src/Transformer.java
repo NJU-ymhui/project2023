@@ -5,7 +5,7 @@ public class Transformer {
         int ans = 0;
         for (int i = 0; i < bytes.length; i++) {
             byte b = bytes[bytes.length - 1 - i];
-            ans += (b & 0xff) << (i * 8);
+            ans += ((int) b & 0x00ff) << (i * 8);
         }
         return ans;
     }
