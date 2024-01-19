@@ -21,7 +21,7 @@ public class Window {
         return segmentSize;
     }
     public void setSegmentSize(int sz) {
-        segmentSize = size;
+        segmentSize = sz;
         initPackets();
     }
     /**

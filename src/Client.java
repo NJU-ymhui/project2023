@@ -1,12 +1,9 @@
 import java.io.*;
 import java.net.*;
 import java.sql.PreparedStatement;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Scanner;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.Random;
 import java.lang.Thread;
 public class Client {
     // Hello^_^, I'm Pchan.
@@ -116,12 +113,12 @@ public class Client {
             p.setData(new Data(data));
         return p;
     }
-    private void printSleep() throws Exception{
-        for (int i = 0; i < 5; i++) {
-            Thread.sleep(200);
+    private void printSleep(int times, int slp) throws Exception{
+        for (int i = 0; i < times; i++) {
+            Thread.sleep(slp);
             System.out.print(".");
         }
-        Thread.sleep(200);
+        Thread.sleep(slp);
         System.out.println();
     }
     /**
@@ -152,9 +149,11 @@ public class Client {
                 new byte[]{},
                 MSS);
         System.out.println("开始握手:");
-        System.out.println("first from client:");
-        printSleep();
+        printSleep(5, 200);
+        System.out.println("------------------------------first from client------------------------------");
+        System.out.println();
         System.out.println(firstShakeHand);
+        System.out.println("-----------------------------------------------------------------------------");
         send(target, firstShakeHand);
         // 接收Ack报文
 //        Socket listenSocket = welcomeSocket.accept();
@@ -166,9 +165,11 @@ public class Client {
         receive(secondHandShake);// 收到client的第一次握手报文
 //        System.out.println("client receive mss = " + secondHandShake.MSS);
         MSS = secondHandShake.MSS; //MSS大小统一，先统一为server的（发数据方）
-        System.out.println("second from server: ");
-        printSleep();
+        printSleep(5, 200);
+        System.out.println("-----------------------------second from server------------------------------");
+        System.out.println();
         print();// 回显报文
+        System.out.println("-----------------------------------------------------------------------------");
 
         // 发送Ack报文
         seq++;
@@ -185,9 +186,11 @@ public class Client {
                 receivedPacket.getUrgent(), receivedPacket.getOptions(),
                 receivedPacket.getAlign(), receivedPacket.MSS
         );
-        System.out.println("third from client:");
-        printSleep();
+        printSleep(5, 200);
+        System.out.println("-----------------------------third from client-------------------------------");
+        System.out.println();
         System.out.println(secondShakeHand);
+        System.out.println("-----------------------------------------------------------------------------");
         send(target, secondShakeHand);
     }
     /**
@@ -263,7 +266,11 @@ public class Client {
         int tmp = seq;
 
         //step1: 用数据包填满window（需要检查是否可以装填）
+        int wd = 1, ack = 0;
         while (filePointer < fileLen){
+            System.out.println("*******************************第" + wd + "个窗口********************************");
+            System.out.println();
+            wd++;
             System.out.println("-----------------------------build packets------------------------------");
             if (window1.ifFinished()) {
                 while (!window1.full()) {
@@ -281,7 +288,7 @@ public class Client {
                         buffer[i] = list.get(i);
 
                     byte[] id = Transformer.toBytes(seq, 4);
-                    int ack = 0;//ack在不知道应答的时候无法确认是多少
+                    //ack在不知道应答的时候无法确认是多少
                     byte[] Ack = Transformer.toBytes(ack, 4);
                     byte[] spcBytes = new byte[2];
                     spcBytes[0] = host.receivedPacket.getSpcBytes()[0];
@@ -289,7 +296,7 @@ public class Client {
                     int checkSum = 0;
                     Packet p = new Packet(
                             Transformer.toBytes(host.port, 2), host.receivedPacket.getSrc(), id, Ack,
-                            spcBytes, host.receivedPacket.getWindow(), Transformer.toBytes(checkSum, 2),
+                            spcBytes, Transformer.toBytes(window1.getSegmentSize(), 2), Transformer.toBytes(checkSum, 2),
                             host.receivedPacket.getUrgent(), host.receivedPacket.getOptions(),
                             host.receivedPacket.getAlign(), host.receivedPacket.MSS
                     );
@@ -302,18 +309,40 @@ public class Client {
             }
             System.out.println("packet has been in window");
             System.out.println("------------------------------------------------------------------------");
+            System.out.println();
             //step2: 处理应答、逐包发送
-            int i = 0, ack = 0;
+            int i = 0;
             seq = tmp;
             for (int j = 0; j < window1.getSize() / window1.getSegmentSize(); j++) {
                 if (window1.packets[j] == null || window1.packets[j].isAck) continue;
                 //发送
                 window1.packets[j].setAck(Transformer.toBytes(ack, 4));
                 window1.packets[j].setId(Transformer.toBytes(seq, 4));
-                System.out.println("start sending packet:");
+                int possible = new Random().nextInt(1000);
+                Packet p = window1.packets[j];
+                if (possible < 100) {
+                    if (possible < 25) {
+                        //miss
+                        p.setMessage(Error.MISS_MSG);
+                    }else if (possible < 50) {
+                        //shuffle
+                        p.setMessage(Error.SHUFFLE_MSG);
+                    }else if (possible < 75) {
+                        //timeout
+                        p.setMessage(Error.TIME_OUT);
+                    }else {
+                        //wrong
+                        p.setMessage(Error.WRONG_MSG);
+                    }
+                    host.send(connectionSocket, p);
+                    InputStream help = connectionSocket.getInputStream();
+                    Packet buf = host.buildPacket(host.getBytes(help));
+                }
+                window1.packets[j].setMessage(Error.NO_ERROR);
+                System.out.println("------start sending packet:------");
                 System.out.println(window1.packets[j]);
                 host.send(connectionSocket, window1.packets[j]);
-                System.out.println("-----send done-----");
+                System.out.println("------------send done------------");
                 //处理应答
                 byte[] buffer;
                 InputStream bytesFromServer = connectionSocket.getInputStream();// 获取字节流
@@ -325,14 +354,19 @@ public class Client {
                 seq = Transformer.toInteger(host.receivedPacket.getAck());
                 if (host.receivedPacket != null) {
                     System.out.printf("第%d个应答: \n", ++i);
-                    host.printSleep();
+//                    host.printSleep();
                     host.print();// 回显报文
                     checkAndRenew(host.receivedPacket, window1);
                 } else {
                     System.out.println("null reply");
                 }
             }
+            tmp = seq;
+            System.out.println("************************************************************************");
         }
+        Packet eof = new Packet();
+        eof.setMessage(Controller.EOF);
+        host.send(connectionSocket, eof);//告知client数据传输完毕（不需要应答）
     }
 
     /**
@@ -342,19 +376,11 @@ public class Client {
      */
     private static void checkAndRenew(Packet packet,Window window){
         for (int i = 0; i < window.getSize() / window.getSegmentSize(); i++){
-//            System.out.println("i = " + i);
-//            System.out.println("window packet " + i + " ack = " + Transformer.toInteger(window.packets[i].getAck()));
-//            System.out.println("ackPacket id = " + Transformer.toInteger(packet.getId()));
-//            System.out.println("packet valid = " + packet.ackValid());
             if (Transformer.toInteger(window.packets[i].getAck()) == Transformer.toInteger(packet.getId()) && packet.ackValid()){
                 window.packets[i].isAck = true;
-                System.out.println("*****ack" + i + "packet******" );
                 break;
             }
         }
-
-        //是否改变windows窗口大小
-        //window.size = Transformer.toInteger(packet.getWindow());
     }
 
     /**
@@ -433,7 +459,6 @@ public class Client {
             System.out.println("Invalid port!");
             return;
         }
-
         Scanner scanner = new Scanner(System.in);
         System.out.println("Client started!");
         while (true) {
@@ -443,24 +468,22 @@ public class Client {
                 Client client = new Client("127.0.0.1", serverPort, String.valueOf(portTmp));
                 InetAddress address = InetAddress.getByAddress(client.serverAddr);
                 Socket socket = new Socket(address, client.serverPort);
-                //模拟三次握手过程
-//                        client = new Client("127.0.0.1", serverPort, "64");
-//                        address = InetAddress.getByAddress(client.serverAddr);
-//                        socket = new Socket(address, client.serverPort);
                 client.buildConnection(socket);
                 System.out.println("Connection succeeded!!!");
                 scanner.nextLine();//吃掉回车
                 while (true) {
                     System.out.printf("%s> ", usr);
                     String command = scanner.nextLine();
-                    String pattern1 = "set -(w|p|m) (\\d+)", pattern2 = "^file\\s+(.+)$";// file (pathname)设置要传的文件
+                    String pattern1 = "set -(w|m) (\\d+)", pattern2 = "^get\\s+(.+)$";// (pathname)设置要传的文件
                     String pattern3 = "^hostname\\s+(.+)$"; // hostname (name)设置用户名
                     //文件路径就绪才可传输（fileRdy）
                     Pattern regex1 = Pattern.compile(pattern1), regex2 = Pattern.compile(pattern2), regex3 = Pattern.compile(pattern3);
                     Matcher matcher1 = regex1.matcher(command), matcher2 = regex2.matcher(command), matcher3 = regex3.matcher(command);
                     if (command.equals("quit") || command.equals("exit")) {
+                        Packet rel = Controller.getCtrlPkt(0, "release");
+                        client.send(socket, rel);
                         // TODO 模拟四次挥手过程
-                        //releaseConnection(client);
+//                        releaseConnection(client, socket);
                         socket.close();
                         break;
                     }
@@ -471,64 +494,100 @@ public class Client {
                         if (command.charAt(5) == 'w') {
                             int window_size = cmd2number(matcher1);
                             System.out.print("setting server.");
-                            client.printSleep();
+                            client.printSleep(5, 200);
                             System.out.println("done!");
                             Packet p = Controller.getCtrlPkt(window_size, "window");
                             client.send(socket, p);
                         }else if (command.charAt(5) == 'm') {
                             int mss = cmd2number(matcher1);
                             System.out.print("setting server.");
-                            client.printSleep();
+                            client.printSleep(5, 200);
                             System.out.println("done!");
                             Packet p = Controller.getCtrlPkt(mss, "MSS");
                             client.send(socket, p);
-                        }else if (command.charAt(5) == 'p') {
-                            //不必有设置端口的功能
-                            client.port = cmd2number(matcher1);
-                            System.out.print("setting client.");
-                            client.printSleep();
-                            System.out.println("client port = " + client.port);
-                            System.out.println("done!");
                         }else {
                             System.out.printf("no command set -%s", matcher1.group(1));
                         }
                     }else if (matcher3.find()) {
                         //hostname
                         usr = matcher3.group(1);
-                    }else if (matcher2.find()){
-                        //file (pathname)
-                        String s = matcher2.group(1);
-                        Packet p = Controller.getCtrlPkt(s);
-                        System.out.print("setting server.");
-                        client.printSleep();
-                        client.send(socket, p);
-                        InputStream fromServer = socket.getInputStream();
-                        Packet rcv = client.buildPacket(client.getBytes(fromServer));
-                        System.out.println(new String(rcv.getData().getData()));
-                        client.fileRdy = Error.check(rcv) == Error.NO_ERROR;
-                    }else if (command.equals("get")) {
+                    }else if (matcher2.find()) {
                         //get file
+                        String s = matcher2.group(1);
+                        Packet ctrl = Controller.getCtrlPkt(s);
+                        Controller.setPath(client, ctrl, socket);
                         client.sentPacket = null;
                         if (client.fileRdy) {
+                            String storeFileName = UUID.randomUUID().toString();
+//                            System.out.println(storeFileName);
+                            File newfile = new File(storeFileName);
+                            boolean flag = newfile.createNewFile();
+                            FileOutputStream store = null;
+                            if (flag) {
+                                store = new FileOutputStream(storeFileName, true);
+                            }
                             Packet p = Controller.getCtrlPkt(0, "get");
-                            client.send(socket, p);
+                            client.send(socket, p);//get报文的ACK视为0, 后续的都是1
                             while (true) {
                                 InputStream fromServer = socket.getInputStream();
                                 Packet segment = client.buildPacket(client.getBytes(fromServer));
-                                System.out.println("receive data: ");
-                                client.printSleep();
+                                int chc = Controller.check(segment);
+                                if (chc == Controller.EOF) {
+                                    client.printSleep(5, 200);
+                                    System.out.println("send done!");
+                                    break;
+                                }
+                                chc = Error.check(segment);
+                                switch (chc) {
+                                    case Error.MISS_MSG:
+                                        client.printSleep(10, 400);
+                                        System.out.println("################ 丢失 ################");
+                                        System.out.println("-----------------重传-----------------");
+                                        break;
+                                    case Error.SHUFFLE_MSG:
+                                        client.printSleep(5, 400);
+                                        System.out.println("################ 乱序 ################");
+                                        System.out.println("--------------按照序号重组--------------");
+                                        break;
+                                    case Error.TIME_OUT:
+                                        client.printSleep(5, 1000);
+                                        System.out.println("################# 超时 ################");
+                                        System.out.println("------------已获得重新传输内容------------");
+                                        break;
+                                    case Error.WRONG_MSG:
+                                        client.printSleep(5, 300);
+                                        System.out.println("################ 出错 ################");
+                                        System.out.println("-----------------重传-----------------");
+                                        break;
+                                    default: break;
+                                }
+                                if (chc != Error.NO_ERROR) {
+                                    client.send(socket, new Packet());
+                                    continue;
+                                }
+                                if (flag) {
+                                    byte[] data = segment.getData().getData();
+                                    store.write(data);
+                                }
+                                client.printSleep(5, 200);
+                                System.out.println("------------------------receive data------------------------");
+                                System.out.println();
                                 System.out.println(segment);
+                                System.out.println("------------------------------------------------------------");
                                 client.reply(client, segment, socket);
-                                //todo 退出标志
+                            }
+                            if (flag) {
+                                System.out.println("Data has been stored in file '" + storeFileName + "'.");
+                                store.close();
                             }
                         }else {
-                            System.out.println("No valid file path set!!!");
+                            System.out.println("No such file '" + s + "'");
                         }
                         client.fileRdy = false;
+                    }else {
+                        System.out.println("command '" + command + "' not found.");
                     }
-                    // TODO 处理各种指令
                 }
-//                socket.close();
             } catch (IOException e) {
                 System.out.println("Connection failed. Request time out...");
             }

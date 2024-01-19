@@ -9,17 +9,8 @@ public class Transformer {
         }
         return ans;
     }
-//    public static void main(String[] s) {
-//        byte[] b = new byte[]{(byte) 0b00000001, 0b00110011};
-//        System.out.println(toInteger(toBytes(toInteger(b), 2)));
-//    }
-
     public static byte[] toBytes(int number, int bytes) {
         byte[] res = new byte[bytes];
-//        res[bytes - 1] = (byte) (number % (1 << 7));
-//        for (int i = 0; i < bytes - 1; i++) {
-//            res[i] = (byte) (number % (1 << (8 * (bytes - i) - 1)) / (1 << (8 * (bytes - i - 1) - 1)));
-//        }
         for (int i = bytes - 1; i >= 0; i--) {
             int tmp = number % (1 << 8);
             number /= 1 << 8;
@@ -34,7 +25,6 @@ public class Transformer {
         }
         return res;
     }
-
     /**
      *  计算checkSum
      * @param data :根据数据计算检验和

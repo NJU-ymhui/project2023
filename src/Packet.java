@@ -1,3 +1,4 @@
+import javax.xml.validation.SchemaFactory;
 import java.util.*;
 
 public class Packet {
@@ -33,6 +34,7 @@ public class Packet {
         this.MSS = MSS;
         headSize = 24 + options.length + align.length;
         data = null;
+        isAck = false;
     }
     public Packet() {
         this(
@@ -102,7 +104,15 @@ public class Packet {
             case Controller.DATA_TRANSFER:
                 spcBytes[0] = (byte) 0b10000000;
                 break;
-            default: break;
+            case Controller.EOF:
+                spcBytes[0] = (byte) 0b10000001;
+                break;
+            case Controller.RELEASE:
+                spcBytes[0] = (byte) 0b11111111;
+                break;
+            default:
+                spcBytes[0] = (byte) 0b00000000;
+                break;
         }
     }
     public void setSrcPort(byte[] port) {
@@ -204,7 +214,7 @@ public class Packet {
 
     @Override
     public String toString() {
-        return String.format("src:%d dest:%d SYN:%d FIN:%d ACK:%d id:%d ack:%d window:%d data:%s\n",
+        return String.format("src:%d dest:%d SYN:%d FIN:%d ACK:%d seq:%d ack:%d window:%d data:%s\n",
                 getSrcPort(),
                 getDestPort(),
                 checkSYN() ? 1 : 0,

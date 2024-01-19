@@ -29,17 +29,18 @@ public class Server extends Client{
     /**
      * 关闭服务器
      * */
-    public void close() {
+    public void close() throws Exception{
         up = false;
+        connected = false;
+        welcomeSocket.close();
     }
     public void release() throws Exception{
         connected = false;
         connectionSocket = null;
         receivedPacket = sentPacket = null;
-        //welcomeSocket.close();
+        welcomeSocket.close();
         System.out.println("release connection with client");
         start();
-        System.out.println();
     }
     public boolean connect() {
         return connected;
@@ -68,7 +69,6 @@ public class Server extends Client{
             OutputStream bytesToClient = listenSocket.getOutputStream();
             byte[] buffer = server.getBytes(bytesFromClient);// buffer中存放client发来报文的字节形式
             Packet firstHandShake = server.buildPacket(buffer);// 组装报文
-//            System.out.println("gggg");
             server.receive(firstHandShake);// 收到client的第一次握手报文
             System.out.println("first from client");
             server.print();// 回显报文
@@ -77,10 +77,9 @@ public class Server extends Client{
                 System.out.println("start ack first handshake");
                 System.out.println();
                 //应答，作为第二次握手的报文
-                int seq = new Random().nextInt(123456789);// 该报文第一个字节id
+                int seq = new Random().nextInt(123);// 该报文第一个字节id
                 byte[] id = Transformer.toBytes(seq, 4);
                 int ack = Transformer.toInteger(server.receivedPacket.getId()) + 1;// 该报文ack应为上一个报文id + 1
-//                System.out.printf("ack=%d\n", ack);
                 byte[] Ack = Transformer.toBytes(ack, 4);
                 byte[] spcBytes = new byte[2];
                 spcBytes[0] = server.receivedPacket.getSpcBytes()[0];
@@ -92,9 +91,6 @@ public class Server extends Client{
                         server.receivedPacket.getUrgent(), server.receivedPacket.getOptions(),
                         server.receivedPacket.getAlign(), server.MSS
                 );
-//                System.out.println("Server MSs = " + secondShakeHand.MSS);
-//                System.out.println("second from server:");
-//                System.out.println(secondShakeHand);
                 server.send(listenSocket, secondShakeHand);// 将报文发送给client，完成应答
 
                 //检查第三次握手报文
@@ -134,8 +130,6 @@ public class Server extends Client{
                 System.out.println("wrong when server try to build connection");
                 continue;// 对于未建立连接时的一切SYN != 1 || ACK != 0的报文直接丢弃}
             }
-//            bytesFromClient.close();
-//            bytesToClient.close();
         }
     }
     /**
@@ -152,7 +146,7 @@ public class Server extends Client{
 
         if (server.checkFIN(firstHandShake)) { //检查第一次挥手报文
             //应答，作为第二次挥手的报文
-            int seq = new Random().nextInt(123456789);// 该报文第一个字节id
+            int seq = new Random().nextInt(123);// 该报文第一个字节id
             byte[] id = Transformer.toBytes(seq, 4);
             int ack = Transformer.toInteger(server.receivedPacket.getId()) + 1;// 该报文ack应为上一个报文id + 1
             byte[] Ack = Transformer.toBytes(ack, 4);
@@ -246,7 +240,7 @@ public class Server extends Client{
         //todo
     }
     public static void main(String[] argv) throws Exception{
-        //argv[0]为服务器启动时监听的端口号; argv[1] argv[2]分别为传输文件的path和MSS(需要判断是否存在)
+        //argv[0]为服务器启动时监听的端口号;
         Server server = new Server();
         if (argv.length != 1) {
             System.out.println("Parameter count error!");
@@ -264,52 +258,61 @@ public class Server extends Client{
             return;
         }// 端口号是否合法
 
-        server.start();
-
-        while (server.check()) {
-            //执行服务器逻辑
-            while (!server.connect()){
-                try {
-                    Server.buildConnection(server);
-                    break;
-                } catch (Exception e) {
-                    System.out.println("Connected failed.");
+        while (true){
+            try {
+                server.start();
+                while (server.check()) {
+                    //执行服务器逻辑
+                    while (!server.connect()) {
+                        try {
+                            Server.buildConnection(server);
+                            break;
+                        } catch (Exception e) {
+                            System.out.println("Connected failed.");
+                        }
+                    }
+                    //finish connecting
+                    Socket connectionSocket = server.connectionSocket;
+                    while (server.connectionSocket != null) {
+                        InputStream fromClient = connectionSocket.getInputStream();
+                        Packet rcv = server.buildPacket(server.getBytes(fromClient));
+                        int check = Controller.check(rcv);
+                        switch (check) {
+                            case Controller.MSS_SET:
+                            case Controller.PATH_SET:
+                            case Controller.WINDOW_SET:
+                                Packet tmp = server.set(rcv);
+                                if (tmp != null)
+                                    server.send(connectionSocket, tmp);
+                                break;
+                            case Error.WRONG_MSG:
+                            case Error.TIME_OUT:
+                            case Error.MISS_MSG:
+                            case Error.SHUFFLE_MSG:
+                                server.errorManage(rcv);
+                                break;
+                            case Controller.DATA_TRANSFER:
+                                Server.dataTransfer(server, connectionSocket, server.path);
+                                server.window.initPackets();//完成传输后window不再使用，清空，保证每次传输时window均为空
+                                break;
+                            case Controller.RELEASE:
+                                //release
+                                System.out.println("*******release connection*******");
+//                        releaseConnection(server, connectionSocket);
+                                connectionSocket.close();
+                                server.release();
+                                break;
+                            default:
+                                break;
+                        }
+                    }
                 }
+            } catch (Exception e) {
+                e.printStackTrace();
+                server.close();
+                System.out.println("Server shut down unexpectedly.");
             }
-            //finish connecting
-            Socket connectionSocket = server.connectionSocket;
-            //todo: control & data transfer
-            while (!connectionSocket.isClosed() && connectionSocket.isConnected()){
-                InputStream fromClient = connectionSocket.getInputStream();
-//                System.out.println("oooo");
-                Packet rcv = server.buildPacket(server.getBytes(fromClient));
-                int check = Controller.check(rcv);
-                switch (check) {
-                    case Controller.MSS_SET:
-                    case Controller.PATH_SET:
-                    case Controller.WINDOW_SET:
-                        Packet tmp = server.set(rcv);
-                        if (tmp != null)
-                            server.send(connectionSocket, tmp);
-                        break;
-                    case Error.WRONG_MSG:
-                    case Error.TIME_OUT:
-                    case Error.MISS_MSG:
-                    case Error.SHUFFLE_MSG:
-                        server.errorManage(rcv);
-                        break;
-                    case Controller.DATA_TRANSFER:
-//                        System.out.println("gggg");
-                        Server.dataTransfer(server, connectionSocket, server.path);
-                        server.window.initPackets();//完成传输后window不再使用，清空，保证每次传输时window均为空
-                        break;
-                    default: break;
-                }
-            }
-            //todo release connection
         }
-        server.close();
-        System.out.println("Server shut down unexpectedly.");
     }
 }
 
