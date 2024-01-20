@@ -136,70 +136,93 @@ public class Server extends Client{
      * 挥手释放连接
      * */
     private static void releaseConnection(Server server, Socket connectingSocket) throws Exception {
-        //  Socket connectingSocket = server.welcomeSocket.accept();//连接中的socket
         InputStream bytesFromClient = connectingSocket.getInputStream();
-        OutputStream bytesToClient = connectingSocket.getOutputStream();//暂未使用
         byte[] buffer = server.getBytes(bytesFromClient);
         Packet firstHandShake = server.buildPacket(buffer);// 组装报文
         server.receive(firstHandShake);// 收到client的第一次挥手报文
+        System.out.println("first from client:");
         server.print();// 回显报文
 
         if (server.checkFIN(firstHandShake)) { //检查第一次挥手报文
             //应答，作为第二次挥手的报文
-            int seq = new Random().nextInt(123);// 该报文第一个字节id
+            int seq = new Random().nextInt(123);
             byte[] id = Transformer.toBytes(seq, 4);
             int ack = Transformer.toInteger(server.receivedPacket.getId()) + 1;// 该报文ack应为上一个报文id + 1
             byte[] Ack = Transformer.toBytes(ack, 4);
             byte[] spcBytes = new byte[2];
             spcBytes[0] = server.receivedPacket.getSpcBytes()[0];
+//            spcBytes[1] = (byte) 0b00010001;// FIN置1
             spcBytes[1] = (byte) (server.receivedPacket.getSpcBytes()[1] | (1 << 4));// ACK置1
-            spcBytes[1] = (byte) (spcBytes[1] & 0b11111110);// FIN置0
 
             int checkSum = 0;
             Packet secondShakeHand = new Packet(
-                    server.receivedPacket.getDest(), server.receivedPacket.getSrc(), id, Ack,
-                    spcBytes, server.receivedPacket.getWindow(), Transformer.toBytes(checkSum, 2),
-                    server.receivedPacket.getUrgent(), server.receivedPacket.getOptions(),
-                    server.receivedPacket.getAlign(), server.receivedPacket.MSS
+                    server.receivedPacket.getDest(), server.receivedPacket.getSrc(),
+                    id,
+                    Ack,
+                    spcBytes, server.receivedPacket.getWindow(),
+                    Transformer.toBytes(checkSum, 2), server.receivedPacket.getUrgent(),
+                    server.receivedPacket.getOptions(), server.receivedPacket.getAlign(),
+                    server.receivedPacket.MSS
             );
             server.send(connectingSocket, secondShakeHand);// 将报文发送给client，完成应答
-            //todo:data transfer
-            // 第二次挥手报文发送完毕，client断开连接，server将剩下的数据传输完毕；
+            System.out.println("second from server:");
+            System.out.println(secondShakeHand);
+            //data transfer
+            Thread.sleep(500);
+            System.out.println("---DATA---");
+            Thread.sleep(500);
+
+            //确认数据传输完毕
+            while (true) {
+                bytesFromClient = connectingSocket.getInputStream();
+                Packet ctrl = server.buildPacket(server.getBytes(bytesFromClient));
+                if (Controller.check(ctrl) == Controller.RELEASE) {
+                    break;
+                }else {
+                    Thread.sleep(500);
+                    System.out.println("---DATA---");
+                    Thread.sleep(500);
+                }
+            }
 
             //数据传输完毕，组装第三次挥手报文
-            seq = new Random().nextInt(123);// todo：该报文第一个字节id，应为传输数据完毕后的下一个序号，暂时填充为随机
+            seq = new Random().nextInt(123);//该报文第一个字节id，应为传输数据完毕后的下一个序号，填充为随机
             id = Transformer.toBytes(seq, 4);
             spcBytes[1] = (byte) (spcBytes[1] | 0b00000001);
             //更换seq，FIN置回1，其它部分报文不变
             Packet thirdHandShake = new Packet(
-                    server.receivedPacket.getDest(), server.receivedPacket.getSrc(), id, Ack,
-                    spcBytes, server.receivedPacket.getWindow(), Transformer.toBytes(checkSum, 2),
-                    server.receivedPacket.getUrgent(), server.receivedPacket.getOptions(),
-                    server.receivedPacket.getAlign(), server.receivedPacket.MSS
+                    server.receivedPacket.getDest(), server.receivedPacket.getSrc(),
+                    id,
+                    Ack,
+                    spcBytes, server.receivedPacket.getWindow(),
+                    Transformer.toBytes(checkSum, 2), server.receivedPacket.getUrgent(),
+                    server.receivedPacket.getOptions(), server.receivedPacket.getAlign(),
+                    server.receivedPacket.MSS
             );
-
             while (server.connected) {
                 server.send(connectingSocket, thirdHandShake);// 将报文发送给client，请求断开连接；
+                System.out.println("third from server:");
+                System.out.println(thirdHandShake);
                 //接受第四次挥手报文
                 bytesFromClient = connectingSocket.getInputStream();
                 buffer = server.getBytes(bytesFromClient);
                 Packet fourthHandShake = server.buildPacket(buffer);
                 server.receive(fourthHandShake);
+                System.out.println("fourth from client:");
                 server.print();
                 //回显报文
-                if (server.checkACK(fourthHandShake) &&
-                        Transformer.toInteger(server.receivedPacket.getId()) == ack + 1 &&
-                        Transformer.toInteger(server.receivedPacket.getAck()) == seq + 1) {
+                if (server.checkACK(fourthHandShake)) {
                     //符合挥手规范，释放连接
+                    //根据tcp, 收到既可以释放连接，不必再做检查
                     server.connected = false;
                     System.out.println("Connection released.");
                     connectingSocket.close();
                 } else {
-                    System.out.println("Failed to release connection.");
+                    System.out.println("Failed to release connection!");
                 }//不符合挥手规范，释放连接失败
             }
         } else {
-            System.out.println("Failed to release connection.");
+            System.out.println("Failed to release connection!!");
         }//不符合挥手规范，释放连接失败，抛出异常
     }
 
@@ -207,7 +230,7 @@ public class Server extends Client{
     public Server() {
         super();
     }
-    public Packet set(Packet ctrl) throws Exception{
+    public Packet set(Socket cont, Packet ctrl) throws Exception{
         int ctr = Controller.check(ctrl);
         Data p = ctrl.getData();
         byte[] data = p.getData();
@@ -227,12 +250,35 @@ public class Server extends Client{
             }
             return ack;
         }else if (ctr == Controller.MSS_SET) {
+            if (window.getSize() / Integer.parseInt(tmp) <= 0) {
+                String ack = "MSS set failed because of too large MSS.";
+                System.out.println(ack);
+                ctrl.setMessage(Error.WRONG_MSG);
+                ctrl.setData(new Data(ack.getBytes()));
+                return ctrl;
+            }
             MSS = Integer.parseInt(tmp);
             window.setSegmentSize(MSS);
             System.out.printf("MSS = %d has been set!\n", MSS);
+            ctrl.setMessage(Error.NO_ERROR);
+            ctrl.setData(new Data(String.format("MSS = %d has been set!", MSS).getBytes()));
+            return ctrl;
         }else if (ctr == Controller.WINDOW_SET) {
+            if (Integer.parseInt(tmp) / window.getSegmentSize() <= 0) {
+                String ack = "window set failed because of too small window size.";
+                System.out.println(ack);
+                ctrl.setMessage(Error.WRONG_MSG);
+                ctrl.setData(new Data(ack.getBytes()));
+                return ctrl;
+            }
             window.setSize(Integer.parseInt(tmp));
             System.out.printf("window size = %d has been set!\n", window.getSize());
+            ctrl.setDestPort(ctrl.getSrc());
+            ctrl.setSrcPort(ctrl.getDest());
+            ctrl.setWindow(Transformer.toBytes(window.getSize(), 2));
+            ctrl.setMessage(Error.NO_ERROR);
+            ctrl.setData(new Data(String.format("window size = %d has been set!", window.getSize()).getBytes()));
+            return ctrl;
         }
         return null;
     }
@@ -281,7 +327,7 @@ public class Server extends Client{
                             case Controller.MSS_SET:
                             case Controller.PATH_SET:
                             case Controller.WINDOW_SET:
-                                Packet tmp = server.set(rcv);
+                                Packet tmp = server.set(connectionSocket, rcv);
                                 if (tmp != null)
                                     server.send(connectionSocket, tmp);
                                 break;
@@ -297,8 +343,7 @@ public class Server extends Client{
                                 break;
                             case Controller.RELEASE:
                                 //release
-                                System.out.println("*******release connection*******");
-//                        releaseConnection(server, connectionSocket);
+                                releaseConnection(server, connectionSocket);
                                 connectionSocket.close();
                                 server.release();
                                 break;
@@ -308,9 +353,8 @@ public class Server extends Client{
                     }
                 }
             } catch (Exception e) {
-                e.printStackTrace();
                 server.close();
-                System.out.println("Server shut down unexpectedly.");
+                System.out.println("Server or Client shut down unexpectedly.");
             }
         }
     }

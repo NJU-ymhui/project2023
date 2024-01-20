@@ -115,6 +115,9 @@ public class Packet {
                 break;
         }
     }
+    public void setWindow(byte[] window) {
+        this.Window = window;
+    }
     public void setSrcPort(byte[] port) {
         srcPort = port;
     }
