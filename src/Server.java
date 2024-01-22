@@ -1,11 +1,15 @@
 import java.io.*;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Random;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Server extends Client{
     private boolean up = false; //标记服务端是否已启用
     private boolean connected = false;
+    private InetAddress ip = null;
     public String path;
 
 
@@ -23,7 +27,7 @@ public class Server extends Client{
     public void start() throws Exception{
         up = true;
         sentPacket = receivedPacket = null;
-        welcomeSocket = new ServerSocket(port);
+        welcomeSocket = new ServerSocket(port, 10,ip);
         System.out.printf("Server started! Listening on %d...\n", port);
     }
     /**
@@ -59,6 +63,10 @@ public class Server extends Client{
      * */
     public void listen(int port) {
         this.port = port;
+    }
+    @Override
+    public void print() {
+        Controller.printHex(receivedPacket);
     }
     private static void buildConnection(Server server) throws Exception{
         while (!server.connected) {
@@ -166,7 +174,7 @@ public class Server extends Client{
             );
             server.send(connectingSocket, secondShakeHand);// 将报文发送给client，完成应答
             System.out.println("second from server:");
-            System.out.println(secondShakeHand);
+            Controller.printHex(secondShakeHand);
             //data transfer
             Thread.sleep(500);
             System.out.println("---DATA---");
@@ -181,6 +189,7 @@ public class Server extends Client{
                 }else {
                     Thread.sleep(500);
                     System.out.println("---DATA---");
+                    System.out.println();
                     Thread.sleep(500);
                 }
             }
@@ -202,7 +211,7 @@ public class Server extends Client{
             while (server.connected) {
                 server.send(connectingSocket, thirdHandShake);// 将报文发送给client，请求断开连接；
                 System.out.println("third from server:");
-                System.out.println(thirdHandShake);
+                Controller.printHex(thirdHandShake);
                 //接受第四次挥手报文
                 bytesFromClient = connectingSocket.getInputStream();
                 buffer = server.getBytes(bytesFromClient);
@@ -230,7 +239,7 @@ public class Server extends Client{
     public Server() {
         super();
     }
-    public Packet set(Socket cont, Packet ctrl) throws Exception{
+    public Packet set(Packet ctrl) throws Exception{
         int ctr = Controller.check(ctrl);
         Data p = ctrl.getData();
         byte[] data = p.getData();
@@ -282,19 +291,30 @@ public class Server extends Client{
         }
         return null;
     }
-    public void errorManage(Packet icmp) {
-        //todo
-    }
     public static void main(String[] argv) throws Exception{
         //argv[0]为服务器启动时监听的端口号;
         Server server = new Server();
-        if (argv.length != 1) {
+        if (argv.length != 2) {
             System.out.println("Parameter count error!");
             return;
         }// 参数数量是否合法
 
         try {
-            server.listen(Integer.parseInt(argv[0]));
+            String addrPattern = "(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)";
+            Pattern r = Pattern.compile(addrPattern);
+            Matcher matcher = r.matcher(argv[0]);
+            if (matcher.find())
+                server.ip = InetAddress.getByName(argv[0]);
+            else {
+                System.out.println("Invalid ip.");
+                return;
+            }
+        }catch (Exception e) {
+            System.out.println("Invalid ip.");
+            return;
+        }
+        try {
+            server.listen(Integer.parseInt(argv[1]));
             if (server.port < 0 || server.port > 65535) {
                 System.out.printf("Invalid port '%s'.\n", argv[0]);
                 return;
@@ -305,6 +325,7 @@ public class Server extends Client{
         }// 端口号是否合法
 
         while (true){
+            //server保持运行
             try {
                 server.start();
                 while (server.check()) {
@@ -327,15 +348,9 @@ public class Server extends Client{
                             case Controller.MSS_SET:
                             case Controller.PATH_SET:
                             case Controller.WINDOW_SET:
-                                Packet tmp = server.set(connectionSocket, rcv);
+                                Packet tmp = server.set(rcv);
                                 if (tmp != null)
                                     server.send(connectionSocket, tmp);
-                                break;
-                            case Error.WRONG_MSG:
-                            case Error.TIME_OUT:
-                            case Error.MISS_MSG:
-                            case Error.SHUFFLE_MSG:
-                                server.errorManage(rcv);
                                 break;
                             case Controller.DATA_TRANSFER:
                                 Server.dataTransfer(server, connectionSocket, server.path);
@@ -347,12 +362,19 @@ public class Server extends Client{
                                 connectionSocket.close();
                                 server.release();
                                 break;
+                            case Controller.CHECK:
+                                Packet ack = new Packet();
+                                ack.setData(new Data(String.format("window = %d\nmss = %d\n",
+                                        server.window.getSize(), server.window.getSegmentSize()).getBytes()));
+                                server.send(connectionSocket, ack);
+                                break;
                             default:
                                 break;
                         }
                     }
                 }
             } catch (Exception e) {
+                e.printStackTrace();
                 server.close();
                 System.out.println("Server or Client shut down unexpectedly.");
             }

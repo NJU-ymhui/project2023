@@ -54,7 +54,7 @@ public class Packet {
     public byte[] getBytes() {
         int dataLen = 0;
         if (data != null && data.getData() != null) dataLen = data.getData().length;
-        byte[] res = new byte[24 + options.length + align.length + dataLen + 4];
+        byte[] res = new byte[24 + options.length + align.length + dataLen + 5];
         System.arraycopy(srcPort, 0, res, 0, 2);
         System.arraycopy(destPort,0, res, 2, 2);
         System.arraycopy(id, 0, res, 4, 4);
@@ -71,10 +71,12 @@ public class Packet {
         if (dataLen > 0) {
             System.arraycopy(data.getData(), 0, res, 24 + options.length + align.length, dataLen);
         }
-        res[res.length - 4] = (byte) '#';//'####'作为结束符
-        res[res.length - 3] = (byte) '#';
-        res[res.length - 2] = (byte) '#';
-        res[res.length - 1] = (byte) '#';
+        //'\0####'作为结束符
+        res[res.length - 5] = (byte) '\0';
+        res[res.length - 4] = (byte) '~';
+        res[res.length - 3] = (byte) '~';
+        res[res.length - 2] = (byte) '~';
+        res[res.length - 1] = (byte) '~';
         //7(4B) = \0\0\0\7
         return res;
     }
@@ -109,6 +111,9 @@ public class Packet {
                 break;
             case Controller.RELEASE:
                 spcBytes[0] = (byte) 0b11111111;
+                break;
+            case Controller.CHECK:
+                spcBytes[0] = (byte) 0b10000010;
                 break;
             default:
                 spcBytes[0] = (byte) 0b00000000;

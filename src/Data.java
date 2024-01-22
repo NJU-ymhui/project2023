@@ -22,8 +22,4 @@ public class Data {
         return new String(data);
     }
     // Test
-    public static void main(String[] args) {
-        Data data = new Data("Hello");
-        System.out.println(data);
-    }
 }
